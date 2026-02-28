@@ -2,8 +2,8 @@
 
 A fully custom 16-bit CPU emulator written from scratch in Rust — including a complete Instruction Set Architecture (ISA), a two-pass assembler, and a CLI emulator.
 
-![CI](https://github.com/RajMandaliya/cpu16/actions/workflows/ci.yml/badge.svg)
 ![License](https://img.shields.io/badge/license-MIT-blue)
+![Rust](https://img.shields.io/badge/rust-async--first-orange.svg)
 
 ---
 
