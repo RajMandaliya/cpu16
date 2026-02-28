@@ -89,7 +89,7 @@ cpu16/
 ### Build
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/cpu16
+git clone https://github.com/RajMandaliya/cpu16
 cd cpu16
 cargo build --release
 ```
