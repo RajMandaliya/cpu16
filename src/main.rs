@@ -9,9 +9,9 @@ fn main() {
         std::process::exit(1);
     }
 
-    let bin_path    = PathBuf::from(&args[1]);
-    let debug_mode  = args.contains(&"--debug".to_string());
-    let max_cycles  = parse_flag(&args, "--max-cycles").unwrap_or(1_000_000);
+    let bin_path = PathBuf::from(&args[1]);
+    let debug_mode = args.contains(&"--debug".to_string());
+    let max_cycles = parse_flag(&args, "--max-cycles").unwrap_or(1_000_000);
 
     let bytes = std::fs::read(&bin_path).unwrap_or_else(|e| {
         eprintln!("Error reading '{}': {}", bin_path.display(), e);
@@ -21,7 +21,11 @@ fn main() {
     let mut cpu = Cpu::new();
     cpu.load_program(&bytes);
 
-    println!("cpu16 — Loaded {} bytes from '{}'", bytes.len(), bin_path.display());
+    println!(
+        "cpu16 — Loaded {} bytes from '{}'",
+        bytes.len(),
+        bin_path.display()
+    );
     println!("Running (max {} cycles)...\n", max_cycles);
 
     if debug_mode {
@@ -52,13 +56,22 @@ fn main() {
 fn run_debug(cpu: &mut Cpu, max_cycles: u64) {
     loop {
         println!("{}", cpu.dump_state());
-        if cpu.cycles >= max_cycles { println!("Max cycles reached."); break; }
+        if cpu.cycles >= max_cycles {
+            println!("Max cycles reached.");
+            break;
+        }
 
         // Step
         match cpu.step() {
-            Ok(CpuState::Halted) => { println!("─── HALT ───"); break; }
+            Ok(CpuState::Halted) => {
+                println!("─── HALT ───");
+                break;
+            }
             Ok(_) => {}
-            Err(e) => { eprintln!("─── ERROR: {} ───", e); break; }
+            Err(e) => {
+                eprintln!("─── ERROR: {} ───", e);
+                break;
+            }
         }
 
         // Tiny pause to read output — in a real debugger you'd wait for input

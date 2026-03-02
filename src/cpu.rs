@@ -8,7 +8,7 @@ const IVT_BASE: u16 = 0x0000;
 /// Default stack base (grows downward from 0xFFFE).
 pub const STACK_BASE: u16 = 0xFFFE;
 /// Program entry point (programs loaded at this address).
-pub const PROG_BASE: u16  = 0x0200;
+pub const PROG_BASE: u16 = 0x0200;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CpuState {
@@ -40,14 +40,14 @@ pub struct Cpu {
 impl Cpu {
     pub fn new() -> Self {
         let mut cpu = Self {
-            regs:        [0; 4],
-            pc:          PROG_BASE,
-            sp:          STACK_BASE,
-            flags:       Flags::default(),
-            mem:         Memory::new(),
+            regs: [0; 4],
+            pc: PROG_BASE,
+            sp: STACK_BASE,
+            flags: Flags::default(),
+            mem: Memory::new(),
             pending_irq: None,
-            state:       CpuState::Running,
-            cycles:      0,
+            state: CpuState::Running,
+            cycles: 0,
         };
         // Enable interrupts by default
         cpu.flags.set_int_enable(true);
@@ -96,7 +96,7 @@ impl Cpu {
     fn handle_interrupt(&mut self, irq: u8) {
         // Disable interrupts, save PC and FLAGS, jump to vector
         self.flags.set_int_enable(false);
-        let saved_pc    = self.pc;
+        let saved_pc = self.pc;
         let saved_flags = self.flags.0 as u16;
         self.push(saved_flags);
         self.push(saved_pc);
@@ -122,25 +122,26 @@ impl Cpu {
             return Ok(self.state);
         }
 
-        let word      = self.fetch_word();
+        let word = self.fetch_word();
         let next_word = self.mem.read_word(self.pc); // peek (may not be consumed)
-        let instr     = Instruction::decode(word, next_word)?;
+        let instr = Instruction::decode(word, next_word)?;
 
         // For instructions that consume the next word, advance PC
         let uses_next_word = matches!(
             instr.opcode,
-            Opcode::Jmp | Opcode::Jz | Opcode::Jnz |
-            Opcode::Jc  | Opcode::Jn | Opcode::Call
+            Opcode::Jmp | Opcode::Jz | Opcode::Jnz | Opcode::Jc | Opcode::Jn | Opcode::Call
         );
 
         self.execute(instr)?;
         self.cycles += 1;
 
         // Advance PC past the address word AFTER executing (so jumps can overwrite PC freely)
-        if uses_next_word && matches!(
-            instr.opcode,
-            Opcode::Jmp | Opcode::Jz | Opcode::Jnz | Opcode::Jc | Opcode::Jn
-        ) {
+        if uses_next_word
+            && matches!(
+                instr.opcode,
+                Opcode::Jmp | Opcode::Jz | Opcode::Jnz | Opcode::Jc | Opcode::Jn
+            )
+        {
             // PC was already set by the jump; don't advance again
         } else if uses_next_word {
             // CALL: PC was set by execute; next_word was used for the address
@@ -201,12 +202,13 @@ impl Cpu {
                 // sign-extend 6-bit immediate: if bit 5 is set, it's negative
                 let imm6 = i.imm & 0x3F;
                 let signed: i16 = if imm6 & 0x20 != 0 {
-                    (imm6 | 0xFFC0) as i16   // sign extend to 16 bits
+                    (imm6 | 0xFFC0) as i16 // sign extend to 16 bits
                 } else {
                     imm6 as i16
                 };
                 let r = (a as i32 + signed as i32) as u32;
-                self.flags.update_arithmetic(r, a, signed as u16, signed < 0);
+                self.flags
+                    .update_arithmetic(r, a, signed as u16, signed < 0);
                 self.regs[dst] = r as u16;
             }
             Opcode::Mul => {
@@ -269,11 +271,37 @@ impl Cpu {
             }
 
             // ── Control flow ─────────────────────────────────────────────────
-            Opcode::Jmp => { self.pc = i.imm; }
-            Opcode::Jz  => { if self.flags.zero()     { self.pc = i.imm; } else { self.pc = self.pc.wrapping_add(2); } }
-            Opcode::Jnz => { if !self.flags.zero()    { self.pc = i.imm; } else { self.pc = self.pc.wrapping_add(2); } }
-            Opcode::Jc  => { if self.flags.carry()    { self.pc = i.imm; } else { self.pc = self.pc.wrapping_add(2); } }
-            Opcode::Jn  => { if self.flags.negative() { self.pc = i.imm; } else { self.pc = self.pc.wrapping_add(2); } }
+            Opcode::Jmp => {
+                self.pc = i.imm;
+            }
+            Opcode::Jz => {
+                if self.flags.zero() {
+                    self.pc = i.imm;
+                } else {
+                    self.pc = self.pc.wrapping_add(2);
+                }
+            }
+            Opcode::Jnz => {
+                if !self.flags.zero() {
+                    self.pc = i.imm;
+                } else {
+                    self.pc = self.pc.wrapping_add(2);
+                }
+            }
+            Opcode::Jc => {
+                if self.flags.carry() {
+                    self.pc = i.imm;
+                } else {
+                    self.pc = self.pc.wrapping_add(2);
+                }
+            }
+            Opcode::Jn => {
+                if self.flags.negative() {
+                    self.pc = i.imm;
+                } else {
+                    self.pc = self.pc.wrapping_add(2);
+                }
+            }
             Opcode::Call => {
                 // PC currently points at the address word; ret addr is after it
                 let ret_addr = self.pc.wrapping_add(2);
@@ -285,20 +313,33 @@ impl Cpu {
             }
 
             // ── Stack ────────────────────────────────────────────────────────
-            Opcode::Push => { let v = self.regs[dst]; self.push(v); }
-            Opcode::Pop  => { self.regs[dst] = self.pop(); }
+            Opcode::Push => {
+                let v = self.regs[dst];
+                self.push(v);
+            }
+            Opcode::Pop => {
+                self.regs[dst] = self.pop();
+            }
 
             // ── Interrupts ───────────────────────────────────────────────────
-            Opcode::Int  => { self.handle_interrupt(i.imm as u8); }
+            Opcode::Int => {
+                self.handle_interrupt(i.imm as u8);
+            }
             Opcode::Iret => {
-                self.pc      = self.pop();
+                self.pc = self.pop();
                 self.flags.0 = self.pop() as u8;
             }
-            Opcode::Ei => { self.flags.set_int_enable(true); }
-            Opcode::Di => { self.flags.set_int_enable(false); }
+            Opcode::Ei => {
+                self.flags.set_int_enable(true);
+            }
+            Opcode::Di => {
+                self.flags.set_int_enable(false);
+            }
 
             // ── Halt ─────────────────────────────────────────────────────────
-            Opcode::Halt => { self.state = CpuState::Halted; }
+            Opcode::Halt => {
+                self.state = CpuState::Halted;
+            }
         }
         Ok(())
     }
@@ -318,13 +359,20 @@ impl Cpu {
     pub fn dump_state(&self) -> String {
         format!(
             "PC={:04X}  SP={:04X}  FLAGS={}\n  R0={:04X}  R1={:04X}  R2={:04X}  R3={:04X}\n  Cycles: {}",
-            self.pc, self.sp, self.flags,
-            self.regs[0], self.regs[1], self.regs[2], self.regs[3],
+            self.pc,
+            self.sp,
+            self.flags,
+            self.regs[0],
+            self.regs[1],
+            self.regs[2],
+            self.regs[3],
             self.cycles,
         )
     }
 }
 
 impl Default for Cpu {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }

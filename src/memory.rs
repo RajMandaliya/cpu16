@@ -6,7 +6,9 @@ pub struct Memory {
 
 impl Memory {
     pub fn new() -> Self {
-        Self { data: Box::new([0u8; 65536]) }
+        Self {
+            data: Box::new([0u8; 65536]),
+        }
     }
 
     pub fn read_byte(&self, addr: u16) -> u8 {
@@ -24,14 +26,14 @@ impl Memory {
     }
 
     pub fn write_word(&mut self, addr: u16, val: u16) {
-        self.data[addr as usize]                   = (val & 0xFF) as u8;
-        self.data[addr.wrapping_add(1) as usize]   = (val >> 8) as u8;
+        self.data[addr as usize] = (val & 0xFF) as u8;
+        self.data[addr.wrapping_add(1) as usize] = (val >> 8) as u8;
     }
 
     /// Load a binary blob starting at `start_addr`.
     pub fn load(&mut self, start_addr: u16, bytes: &[u8]) {
         let start = start_addr as usize;
-        let end   = (start + bytes.len()).min(65536);
+        let end = (start + bytes.len()).min(65536);
         self.data[start..end].copy_from_slice(&bytes[..end - start]);
     }
 
@@ -43,7 +45,10 @@ impl Memory {
             out.push_str(&format!("  {:04X}: ", addr));
             for col in 0..16u16 {
                 if row + col < len {
-                    out.push_str(&format!("{:02X} ", self.data[addr.wrapping_add(col) as usize]));
+                    out.push_str(&format!(
+                        "{:02X} ",
+                        self.data[addr.wrapping_add(col) as usize]
+                    ));
                 } else {
                     out.push_str("   ");
                 }
@@ -55,5 +60,7 @@ impl Memory {
 }
 
 impl Default for Memory {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }

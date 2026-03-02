@@ -8,20 +8,44 @@
 pub struct Flags(pub u8);
 
 impl Flags {
-    pub fn zero(&self)     -> bool { self.0 & (1 << 0) != 0 }
-    pub fn carry(&self)    -> bool { self.0 & (1 << 1) != 0 }
-    pub fn negative(&self) -> bool { self.0 & (1 << 2) != 0 }
-    pub fn overflow(&self) -> bool { self.0 & (1 << 3) != 0 }
-    pub fn int_enable(&self) -> bool { self.0 & (1 << 7) != 0 }
+    pub fn zero(&self) -> bool {
+        self.0 & (1 << 0) != 0
+    }
+    pub fn carry(&self) -> bool {
+        self.0 & (1 << 1) != 0
+    }
+    pub fn negative(&self) -> bool {
+        self.0 & (1 << 2) != 0
+    }
+    pub fn overflow(&self) -> bool {
+        self.0 & (1 << 3) != 0
+    }
+    pub fn int_enable(&self) -> bool {
+        self.0 & (1 << 7) != 0
+    }
 
-    pub fn set_zero(&mut self, v: bool)     { self.set_bit(0, v); }
-    pub fn set_carry(&mut self, v: bool)    { self.set_bit(1, v); }
-    pub fn set_negative(&mut self, v: bool) { self.set_bit(2, v); }
-    pub fn set_overflow(&mut self, v: bool) { self.set_bit(3, v); }
-    pub fn set_int_enable(&mut self, v: bool) { self.set_bit(7, v); }
+    pub fn set_zero(&mut self, v: bool) {
+        self.set_bit(0, v);
+    }
+    pub fn set_carry(&mut self, v: bool) {
+        self.set_bit(1, v);
+    }
+    pub fn set_negative(&mut self, v: bool) {
+        self.set_bit(2, v);
+    }
+    pub fn set_overflow(&mut self, v: bool) {
+        self.set_bit(3, v);
+    }
+    pub fn set_int_enable(&mut self, v: bool) {
+        self.set_bit(7, v);
+    }
 
     fn set_bit(&mut self, bit: u8, v: bool) {
-        if v { self.0 |= 1 << bit; } else { self.0 &= !(1 << bit); }
+        if v {
+            self.0 |= 1 << bit;
+        } else {
+            self.0 &= !(1 << bit);
+        }
     }
 
     /// Update Z, N, C flags from an arithmetic result.
@@ -51,7 +75,9 @@ impl Flags {
 
 impl std::fmt::Display for Flags {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "[Z:{} C:{} N:{} V:{} IE:{}]",
+        write!(
+            f,
+            "[Z:{} C:{} N:{} V:{} IE:{}]",
             self.zero() as u8,
             self.carry() as u8,
             self.negative() as u8,
