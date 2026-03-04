@@ -109,13 +109,13 @@ impl Cpu {
     /// Execute one instruction. Returns `Ok(CpuState)` or an error string.
     pub fn step(&mut self) -> Result<CpuState, String> {
         // Check for pending interrupt before executing next instruction
-        if self.flags.int_enable() {
-            if let Some(irq) = self.pending_irq.take() {
-                self.handle_interrupt(irq);
-                self.state = CpuState::Running;
-                self.cycles += 6;
-                return Ok(self.state);
-            }
+        if self.flags.int_enable()
+            && let Some(irq) = self.pending_irq.take()
+        {
+            self.handle_interrupt(irq);
+            self.state = CpuState::Running;
+            self.cycles += 6;
+            return Ok(self.state);
         }
 
         if self.state != CpuState::Running {

@@ -122,7 +122,7 @@ impl Instruction {
         let opcode_bits = (word >> 10) as u8;
         let dst = ((word >> 8) & 0x3) as u8;
         let src = ((word >> 6) & 0x3) as u8;
-        let imm6 = (word & 0x3F) as u16;
+        let imm6 = word & 0x3F;
 
         let opcode = Opcode::try_from(opcode_bits)?;
 

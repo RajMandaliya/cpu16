@@ -42,7 +42,7 @@ impl Assembler {
             if tokens.is_empty() {
                 continue;
             }
-            if tokens.first().map_or(false, |t| t.ends_with(':')) {
+            if tokens.first().is_some_and(|t| t.ends_with(":")) {
                 continue;
             }
             let emitted = self.emit(tokens, &symbols, *lineno)?;
@@ -52,7 +52,7 @@ impl Assembler {
         Ok(AssemblyOutput { words, symbols })
     }
 
-    fn tokenize<'a>(&self, source: &'a str) -> Vec<(usize, Vec<String>)> {
+    fn tokenize(&self, source: &str) -> Vec<(usize, Vec<String>)> {
         source
             .lines()
             .enumerate()
@@ -76,7 +76,7 @@ impl Assembler {
     }
 
     /// How many 16-bit words does this instruction emit?
-    fn instr_size(&self, tokens: &[String], lineno: usize) -> Result<u16, String> {
+    fn instr_size(&self, tokens: &[String], _lineno: usize) -> Result<u16, String> {
         match tokens[0].as_str() {
             "JMP" | "JZ" | "JNZ" | "JC" | "JN" | "CALL" => Ok(2),
             "DW" => Ok(tokens.len() as u16 - 1),

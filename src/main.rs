@@ -75,7 +75,7 @@ fn run_debug(cpu: &mut Cpu, max_cycles: u64) {
         }
 
         // Tiny pause to read output — in a real debugger you'd wait for input
-        if cpu.cycles % 10 == 0 {
+        if cpu.cycles.is_multiple_of(10) {
             println!("  ... {} cycles ...", cpu.cycles);
         }
     }
