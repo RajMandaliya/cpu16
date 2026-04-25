@@ -9,9 +9,44 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Planned
-- Phase 2: additional example programs (sort, search, sieve, stack calculator)
 - Phase 3: pipeline simulation, cache model, extended instruction set
 - Phase 4: web-based step-through debugger UI
+
+---
+
+## [0.2.0] — 2025-04-25
+
+### Added
+
+**`examples/bubble_sort.asm`**
+- Sorts an 8-element integer array in-place using bubble sort
+- Input `[8, 3, 7, 1, 6, 2, 5, 4]` stored at memory address `0x0300`
+- Demonstrates nested loops, `LOADM`/`STORE` for indirect memory access, and in-place swap
+- Expected output at `0x0300` after `HALT`: `[1, 2, 3, 4, 5, 6, 7, 8]`
+- Worst-case cycle count: ~450 cycles (reverse-sorted input)
+
+**`examples/binary_search.asm`**
+- Binary search over a sorted 8-element array at `0x0300`
+- Returns zero-based index in `R0`, or `0xFFFF` if target not found
+- Demonstrates `CALL`/`RET` subroutine pattern and divide-and-conquer logic in assembly
+- Search for `14` in `[2, 5, 8, 11, 14, 17, 20, 23]` → `R0 = 4`
+- Maximum cycle count: ~24 cycles (3 bisections)
+
+**`examples/sieve.asm`**
+- Sieve of Eratosthenes finding all prime numbers up to 30
+- Boolean sieve array stored at `0x0300`–`0x033C` (`sieve[i] = 1` means i is prime)
+- Demonstrates stride-based memory writes, `MUL` for computing `p*p`, nested loops
+- Outer loop bound is `sqrt(30) ≈ 5` — any composite n has a prime factor ≤ `sqrt(n)`
+- Primes found: 2, 3, 5, 7, 11, 13, 17, 19, 23, 29
+- Cycle count: ~620 cycles
+
+**`examples/stack_calc.asm`**
+- RPN (Reverse Polish Notation) calculator using a software operand stack
+- Evaluates `3 4 + 2 * 7 -` → result `R0 = 7` after `HALT`
+- Software operand stack lives at `0x0400`, separate from CPU hardware stack at `0xFFFE`
+- Subroutines: `PUSH_OP`, `POP_OP`, `OP_ADD`, `OP_SUB`, `OP_MUL`, `OP_DIV`
+- Mirrors how real stack machines work (JVM, CPython bytecode, Forth)
+- Cycle count: ~180 cycles
 
 ---
 
@@ -82,5 +117,6 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
-[Unreleased]: https://github.com/RajMandaliya/cpu16/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/RajMandaliya/cpu16/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/RajMandaliya/cpu16/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/RajMandaliya/cpu16/releases/tag/v0.1.0
