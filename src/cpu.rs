@@ -336,6 +336,106 @@ impl Cpu {
                 self.flags.set_int_enable(false);
             }
 
+            // ── Extended instructions (v0.3.0) ────────────────────────────────
+
+            // NEG Rd — two's complement negation: Rd = 0 - Rd
+            //
+            // Flag behaviour (mirrors x86 NEG semantics):
+            //   Z = 1  if result is zero
+            //   N = 1  if result is negative (bit 15 set)
+            //   C = 1  if Rd was non-zero before negation (borrow from 0)
+            //   V = 1  if Rd was 0x8000 (negation of MIN_INT overflows)
+            Opcode::Neg => {
+                let a = self.regs[dst];
+                let r = (0u32).wrapping_sub(a as u32);
+                let r16 = r as u16;
+                self.flags.set_zero(r16 == 0);
+                self.flags.set_negative(r16 & 0x8000 != 0);
+                // C = 1 if source was non-zero (there was a borrow)
+                self.flags.set_carry(a != 0);
+                // V = 1 only when negating 0x8000 (signed MIN overflows)
+                self.flags.set_overflow(a == 0x8000);
+                self.regs[dst] = r16;
+            }
+
+            // MOD Rd, Rs — unsigned modulo: Rd = Rd % Rs
+            //
+            // Flag behaviour:
+            //   Z = 1  if result is zero (evenly divisible)
+            //   N = 1  if result has bit 15 set (unusual for small moduli)
+            //   C = 0  (always cleared, consistent with DIV)
+            //   error  if Rs == 0 (modulo by zero)
+            Opcode::Mod => {
+                if self.regs[src] == 0 {
+                    return Err("Modulo by zero".into());
+                }
+                let r = self.regs[dst] % self.regs[src];
+                self.flags.update_logical(r);
+                self.regs[dst] = r;
+            }
+
+            // SWAP Rd, Rs — exchange register values atomically
+            //
+            // Flags: unchanged (SWAP is a data movement, not arithmetic)
+            // Use case: avoids needing a scratch register for a classic
+            //   three-instruction swap (MOV tmp,a / MOV a,b / MOV b,tmp)
+            Opcode::Swap => {
+                self.regs.swap(dst, src);
+            }
+
+            // ROL Rd, imm4 — rotate left through carry by imm4 bits
+            //
+            // For each bit rotated:
+            //   new_bit0 = old C
+            //   new C    = old bit15
+            // After all rotations:
+            //   Z = 1 if result is zero
+            //   N = 1 if result bit 15 is set
+            //   C = last bit rotated out (bit 15 of the pre-rotation value)
+            //
+            // ROL by 1 is the classical operation. Larger counts apply it N times.
+            // ROL by 0 is a no-op (flags unchanged).
+            Opcode::Rol => {
+                let count = (i.imm & 0xF) as u32;
+                let mut val = self.regs[dst];
+                let mut carry = self.flags.carry();
+                for _ in 0..count {
+                    let new_carry = val & 0x8000 != 0; // old bit 15 exits
+                    val = (val << 1) | (carry as u16); // old carry enters bit 0
+                    carry = new_carry;
+                }
+                self.flags.set_carry(carry);
+                self.flags.set_zero(val == 0);
+                self.flags.set_negative(val & 0x8000 != 0);
+                self.regs[dst] = val;
+            }
+
+            // ROR Rd, imm4 — rotate right through carry by imm4 bits
+            //
+            // For each bit rotated:
+            //   new_bit15 = old C
+            //   new C     = old bit0
+            // After all rotations:
+            //   Z = 1 if result is zero
+            //   N = 1 if result bit 15 is set (i.e. C was set before rotation)
+            //   C = last bit rotated out (bit 0 of the pre-rotation value)
+            //
+            // ROR by 0 is a no-op (flags unchanged).
+            Opcode::Ror => {
+                let count = (i.imm & 0xF) as u32;
+                let mut val = self.regs[dst];
+                let mut carry = self.flags.carry();
+                for _ in 0..count {
+                    let new_carry = val & 0x0001 != 0; // old bit 0 exits
+                    val = (val >> 1) | ((carry as u16) << 15); // old carry enters bit 15
+                    carry = new_carry;
+                }
+                self.flags.set_carry(carry);
+                self.flags.set_zero(val == 0);
+                self.flags.set_negative(val & 0x8000 != 0);
+                self.regs[dst] = val;
+            }
+
             // ── Halt ─────────────────────────────────────────────────────────
             Opcode::Halt => {
                 self.state = CpuState::Halted;

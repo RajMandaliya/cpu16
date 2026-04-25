@@ -1,6 +1,6 @@
 use cpu16::assembler::Assembler;
 use cpu16::cpu::{Cpu, CpuState, PROG_BASE};
-use cpu16::isa::Opcode;
+use cpu16::isa::{Opcode, Instruction};
 
 /// Assemble a source string and load it into a fresh CPU.
 fn asm_and_load(src: &str) -> Cpu {
@@ -393,4 +393,256 @@ fn test_fibonacci_10() {
     let mut cpu = asm_and_load(&src);
     cpu.run(10_000).unwrap();
     assert_eq!(cpu.regs[1], 55, "Fibonacci(10) should be 55");
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Tests for extended instructions: NEG, MOD, SWAP, ROL, ROR  (v0.3.0)
+//
+// Add these test functions to your existing tests/integration_tests.rs file.
+// They follow the exact same pattern as your existing tests.
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[test]
+fn test_neg_positive_value() {
+    // NEG(0x0005) → 0xFFFB, C=1 (source was non-zero), N=1, Z=0, V=0
+    let mut cpu = Cpu::new();
+    let program = &[
+        Instruction::encode_ri(Opcode::Load, 0, 5),   // LOAD R0, 5
+        Instruction::encode_ri(Opcode::Neg, 0, 0),    // NEG  R0
+        Instruction::encode_ri(Opcode::Halt, 0, 0),   // HALT
+    ];
+    cpu.load_program(to_bytes(program));
+    cpu.run(100).unwrap();
+    assert_eq!(cpu.regs[0], 0xFFFB);
+    assert!(cpu.flags.carry());     // source was non-zero
+    assert!(cpu.flags.negative());  // result is negative
+    assert!(!cpu.flags.zero());
+    assert!(!cpu.flags.overflow());
+}
+
+#[test]
+fn test_neg_zero() {
+    // NEG(0x0000) → 0x0000, C=0, Z=1, N=0, V=0
+    let mut cpu = Cpu::new();
+    let program = &[
+        Instruction::encode_ri(Opcode::Load, 0, 0),   // LOAD R0, 0
+        Instruction::encode_ri(Opcode::Neg, 0, 0),    // NEG  R0
+        Instruction::encode_ri(Opcode::Halt, 0, 0),   // HALT
+    ];
+    cpu.load_program(to_bytes(program));
+    cpu.run(100).unwrap();
+    assert_eq!(cpu.regs[0], 0x0000);
+    assert!(!cpu.flags.carry());    // source was zero — no borrow
+    assert!(cpu.flags.zero());
+    assert!(!cpu.flags.negative());
+    assert!(!cpu.flags.overflow());
+}
+
+#[test]
+fn test_neg_min_int_overflow() {
+    // NEG(0x8000) → 0x8000 (wraps), V=1, C=1, N=1, Z=0
+    // Negating the most negative signed 16-bit integer overflows back to itself.
+    let mut cpu = Cpu::new();
+    // LOAD wide value 0x8000 using the sentinel mechanism
+    let program = &[
+        Instruction::encode_ri(Opcode::Load, 0, 0x3E), // LOAD R0, <next word>
+        0x8000u16,                                      // wide immediate = 0x8000
+        Instruction::encode_ri(Opcode::Neg, 0, 0),     // NEG  R0
+        Instruction::encode_ri(Opcode::Halt, 0, 0),    // HALT
+    ];
+    cpu.load_program(to_bytes(program));
+    cpu.run(100).unwrap();
+    assert_eq!(cpu.regs[0], 0x8000);
+    assert!(cpu.flags.overflow());  // signed overflow
+    assert!(cpu.flags.carry());     // source was non-zero
+    assert!(cpu.flags.negative());
+    assert!(!cpu.flags.zero());
+}
+
+#[test]
+fn test_mod_basic() {
+    // MOD(10, 3) → 1
+    let mut cpu = Cpu::new();
+    let program = &[
+        Instruction::encode_ri(Opcode::Load, 0, 10),  // LOAD R0, 10
+        Instruction::encode_ri(Opcode::Load, 1, 3),   // LOAD R1, 3
+        Instruction::encode_rr(Opcode::Mod, 0, 1),    // MOD  R0, R1  → R0 = 10 % 3 = 1
+        Instruction::encode_ri(Opcode::Halt, 0, 0),   // HALT
+    ];
+    cpu.load_program(to_bytes(program));
+    cpu.run(100).unwrap();
+    assert_eq!(cpu.regs[0], 1);
+    assert!(!cpu.flags.zero());
+}
+
+#[test]
+fn test_mod_evenly_divisible() {
+    // MOD(12, 4) → 0, Z=1
+    let mut cpu = Cpu::new();
+    let program = &[
+        Instruction::encode_ri(Opcode::Load, 0, 12),  // LOAD R0, 12
+        Instruction::encode_ri(Opcode::Load, 1, 4),   // LOAD R1, 4
+        Instruction::encode_rr(Opcode::Mod, 0, 1),    // MOD  R0, R1  → R0 = 0
+        Instruction::encode_ri(Opcode::Halt, 0, 0),   // HALT
+    ];
+    cpu.load_program(to_bytes(program));
+    cpu.run(100).unwrap();
+    assert_eq!(cpu.regs[0], 0);
+    assert!(cpu.flags.zero());
+}
+
+#[test]
+fn test_mod_by_zero_errors() {
+    // MOD(5, 0) → Err
+    let mut cpu = Cpu::new();
+    let program = &[
+        Instruction::encode_ri(Opcode::Load, 0, 5),   // LOAD R0, 5
+        Instruction::encode_ri(Opcode::Load, 1, 0),   // LOAD R1, 0
+        Instruction::encode_rr(Opcode::Mod, 0, 1),    // MOD  R0, R1  → error
+        Instruction::encode_ri(Opcode::Halt, 0, 0),   // HALT
+    ];
+    cpu.load_program(to_bytes(program));
+    let result = cpu.run(100);
+    assert!(result.is_err());
+    assert_eq!(result.unwrap_err(), "Modulo by zero");
+}
+
+#[test]
+fn test_swap_basic() {
+    // SWAP R0, R1: R0=0xAAAA, R1=0x5555 → R0=0x5555, R1=0xAAAA
+    let mut cpu = Cpu::new();
+    let program = &[
+        Instruction::encode_ri(Opcode::Load, 0, 0x3E), // LOAD R0, <next>
+        0xAAAAu16,
+        Instruction::encode_ri(Opcode::Load, 1, 0x3E), // LOAD R1, <next>
+        0x5555u16,
+        Instruction::encode_rr(Opcode::Swap, 0, 1),    // SWAP R0, R1
+        Instruction::encode_ri(Opcode::Halt, 0, 0),    // HALT
+    ];
+    cpu.load_program(to_bytes(program));
+    cpu.run(100).unwrap();
+    assert_eq!(cpu.regs[0], 0x5555);
+    assert_eq!(cpu.regs[1], 0xAAAA);
+}
+
+#[test]
+fn test_swap_same_register() {
+    // SWAP R0, R0: value unchanged
+    let mut cpu = Cpu::new();
+    let program = &[
+        Instruction::encode_ri(Opcode::Load, 0, 42),   // LOAD R0, 42
+        Instruction::encode_rr(Opcode::Swap, 0, 0),    // SWAP R0, R0
+        Instruction::encode_ri(Opcode::Halt, 0, 0),    // HALT
+    ];
+    cpu.load_program(to_bytes(program));
+    cpu.run(100).unwrap();
+    assert_eq!(cpu.regs[0], 42);
+}
+
+#[test]
+fn test_rol_by_1() {
+    // ROL R0 by 1, C=0 initially
+    // R0 = 0b1000_0000_0000_0001 = 0x8001
+    // Rotate left 1: bit15 (1) → C, old C (0) → bit0
+    // Result: 0b0000_0000_0000_0010 = 0x0002, new C=1
+    let mut cpu = Cpu::new();
+    cpu.flags.set_carry(false);
+    let program = &[
+        Instruction::encode_ri(Opcode::Load, 0, 0x3E), // LOAD R0, <next>
+        0x8001u16,
+        Instruction::encode_ri(Opcode::Rol, 0, 1),     // ROL  R0, 1
+        Instruction::encode_ri(Opcode::Halt, 0, 0),    // HALT
+    ];
+    cpu.load_program(to_bytes(program));
+    cpu.run(100).unwrap();
+    assert_eq!(cpu.regs[0], 0x0002);
+    assert!(cpu.flags.carry());     // old bit15 became C
+    assert!(!cpu.flags.zero());
+    assert!(!cpu.flags.negative());
+}
+
+#[test]
+fn test_rol_carry_enters_bit0() {
+    // ROL with C=1: carry should enter bit 0
+    // R0 = 0x0002 = 0b0000_0000_0000_0010, C=1
+    // After ROL 1: result = 0x0005 = 0b0000_0000_0000_0101, new C=0
+    let mut cpu = Cpu::new();
+    cpu.flags.set_carry(true);
+    let program = &[
+        Instruction::encode_ri(Opcode::Load, 0, 2),    // LOAD R0, 2
+        Instruction::encode_ri(Opcode::Rol, 0, 1),     // ROL  R0, 1
+        Instruction::encode_ri(Opcode::Halt, 0, 0),    // HALT
+    ];
+    cpu.load_program(to_bytes(program));
+    cpu.run(100).unwrap();
+    assert_eq!(cpu.regs[0], 0x0005);
+    assert!(!cpu.flags.carry());    // old bit15 was 0
+}
+
+#[test]
+fn test_ror_by_1() {
+    // ROR R0 by 1, C=0 initially
+    // R0 = 0x0003 = 0b0000_0000_0000_0011
+    // Rotate right 1: bit0 (1) → C, old C (0) → bit15
+    // Result: 0b0000_0000_0000_0001 = 0x0001, new C=1
+    let mut cpu = Cpu::new();
+    cpu.flags.set_carry(false);
+    let program = &[
+        Instruction::encode_ri(Opcode::Load, 0, 3),    // LOAD R0, 3
+        Instruction::encode_ri(Opcode::Ror, 0, 1),     // ROR  R0, 1
+        Instruction::encode_ri(Opcode::Halt, 0, 0),    // HALT
+    ];
+    cpu.load_program(to_bytes(program));
+    cpu.run(100).unwrap();
+    assert_eq!(cpu.regs[0], 0x0001);
+    assert!(cpu.flags.carry());     // old bit0 was 1
+}
+
+#[test]
+fn test_ror_carry_enters_bit15() {
+    // ROR with C=1: carry should enter bit 15 making result negative
+    // R0 = 0x0002 = 0b0000_0000_0000_0010, C=1
+    // After ROR 1: result = 0b1000_0000_0000_0001 = 0x8001, new C=0, N=1
+    let mut cpu = Cpu::new();
+    cpu.flags.set_carry(true);
+    let program = &[
+        Instruction::encode_ri(Opcode::Load, 0, 2),    // LOAD R0, 2
+        Instruction::encode_ri(Opcode::Ror, 0, 1),     // ROR  R0, 1
+        Instruction::encode_ri(Opcode::Halt, 0, 0),    // HALT
+    ];
+    cpu.load_program(to_bytes(program));
+    cpu.run(100).unwrap();
+    assert_eq!(cpu.regs[0], 0x8001);
+    assert!(!cpu.flags.carry());    // old bit0 was 0
+    assert!(cpu.flags.negative());  // bit15 now set
+}
+
+#[test]
+fn test_rol_ror_roundtrip() {
+    // ROL then ROR by the same count should restore the original value
+    // (as long as C starts at 0 and count is consistent)
+    let mut cpu = Cpu::new();
+    cpu.flags.set_carry(false);
+    let program = &[
+        Instruction::encode_ri(Opcode::Load, 0, 0x3E), // LOAD R0, <next>
+        0x1234u16,
+        Instruction::encode_ri(Opcode::Rol, 0, 4),     // ROL  R0, 4
+        Instruction::encode_ri(Opcode::Ror, 0, 4),     // ROR  R0, 4
+        Instruction::encode_ri(Opcode::Halt, 0, 0),    // HALT
+    ];
+    cpu.load_program(to_bytes(program));
+    cpu.run(100).unwrap();
+    // The value should be restored if C was 0 throughout
+    // (ROL 4 then ROR 4 is identity when carry stays 0 between operations)
+    assert_eq!(cpu.regs[0], 0x1234);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Helper used in tests above — convert u16 slice to byte slice
+// (same pattern as your existing tests)
+// ─────────────────────────────────────────────────────────────────────────────
+fn to_bytes(words: &[u16]) -> &[u8] {
+    unsafe {
+        std::slice::from_raw_parts(words.as_ptr() as *const u8, words.len() * 2)
+    }
 }

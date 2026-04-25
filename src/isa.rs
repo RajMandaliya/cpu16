@@ -54,6 +54,18 @@ pub enum Opcode {
     Ei = 0x1C,   // EI                — enable interrupts
     Di = 0x1D,   // DI                — disable interrupts
 
+    // Extended arithmetic / bit manipulation (v0.3.0)
+    Neg = 0x1E,  // NEG  Rd           — Rd = 0 - Rd (two's complement negation)
+                 //                      flags: Z, N, C=1 if Rd≠0, V=1 if Rd=0x8000
+    Mod = 0x1F,  // MOD  Rd, Rs       — Rd = Rd % Rs (unsigned modulo)
+                 //                      flags: Z, N; error if Rs=0
+    Swap = 0x20, // SWAP Rd, Rs       — exchange Rd ↔ Rs atomically
+                 //                      flags: unchanged
+    Rol = 0x21,  // ROL  Rd, imm4     — rotate Rd left by imm4 bits through carry
+                 //                      bit shifted out becomes new C; old C enters bit 0
+    Ror = 0x22,  // ROR  Rd, imm4     — rotate Rd right by imm4 bits through carry
+                 //                      bit shifted out becomes new C; old C enters bit 15
+
     Halt = 0x3F, // HALT
 }
 
@@ -91,6 +103,11 @@ impl TryFrom<u8> for Opcode {
             0x1B => Ok(Self::Iret),
             0x1C => Ok(Self::Ei),
             0x1D => Ok(Self::Di),
+            0x1E => Ok(Self::Neg),
+            0x1F => Ok(Self::Mod),
+            0x20 => Ok(Self::Swap),
+            0x21 => Ok(Self::Rol),
+            0x22 => Ok(Self::Ror),
             0x3F => Ok(Self::Halt),
             other => Err(format!("Unknown opcode: 0x{:02X}", other)),
         }
