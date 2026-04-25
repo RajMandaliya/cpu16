@@ -68,7 +68,9 @@ struct ExMemReg {
     store_val: u16,
     new_flags: Option<Flags>,
     valid: bool,
+    #[allow(dead_code)]
     branch_taken: bool,
+    #[allow(dead_code)]
     branch_target: u16,
     is_halt: bool,
 }
@@ -216,7 +218,7 @@ impl PipelinedCpu {
             (self.mem_wb.valid, self.mem_wb.opcode, self.mem_wb.dst),
         ];
         for &(valid, opcode, dst) in stages {
-            if valid && opcode.map_or(false, writes_reg) && dst == reg {
+            if valid && opcode.is_some_and(writes_reg) && dst == reg {
                 return true;
             }
         }
@@ -230,7 +232,7 @@ impl PipelinedCpu {
             (self.mem_wb.valid, self.mem_wb.opcode),
         ];
         for &(valid, opcode) in stages {
-            if valid && opcode.map_or(false, writes_flags) {
+            if valid && opcode.is_some_and(writes_flags) {
                 return true;
             }
         }
