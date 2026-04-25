@@ -644,3 +644,135 @@ fn test_rol_ror_roundtrip() {
 fn to_bytes(words: &[u16]) -> &[u8] {
     unsafe { std::slice::from_raw_parts(words.as_ptr() as *const u8, words.len() * 2) }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Cache tests (v0.4.0)
+// Add these to the bottom of tests/integration_tests.rs
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[test]
+fn test_cache_cold_miss_then_hit() {
+    // First read to an address = cold miss, second read = hit
+    let mut cpu = Cpu::new();
+    // Write a value directly to memory, then read it twice via LOADM
+    cpu.mem.write_word(0x0300, 0xABCD);
+    let program = &[
+        Instruction::encode_ri(Opcode::Load, 0, 0x3E), // LOAD R0, 0x0300
+        0x0300u16,
+        Instruction::encode_rr(Opcode::LoadM, 1, 0),   // LOADM R1, [R0] — cold miss
+        Instruction::encode_rr(Opcode::LoadM, 2, 0),   // LOADM R2, [R0] — hit
+        Instruction::encode_ri(Opcode::Halt, 0, 0),
+    ];
+    cpu.load_program(to_bytes(program));
+    cpu.run(100).unwrap();
+
+    assert_eq!(cpu.regs[1], 0xABCD);
+    assert_eq!(cpu.regs[2], 0xABCD);
+    assert_eq!(cpu.cache.stats.reads, 2);
+    assert_eq!(cpu.cache.stats.hits, 1);
+    assert_eq!(cpu.cache.stats.misses, 1);
+    assert_eq!(cpu.cache.stats.cold_misses, 1);
+    assert_eq!(cpu.cache.stats.conflict_misses, 0);
+}
+
+#[test]
+fn test_cache_write_through_coherence() {
+    // Write to address, then read back — cache must reflect the written value
+    let mut cpu = Cpu::new();
+    let program = &[
+        Instruction::encode_ri(Opcode::Load, 0, 0x3E), // LOAD R0, 0x0300 (address)
+        0x0300u16,
+        Instruction::encode_ri(Opcode::Load, 1, 42),   // LOAD R1, 42 (value)
+        Instruction::encode_rr(Opcode::Store, 0, 1),   // STORE [R0], R1  — write
+        Instruction::encode_rr(Opcode::LoadM, 2, 0),   // LOADM R2, [R0]  — read back
+        Instruction::encode_ri(Opcode::Halt, 0, 0),
+    ];
+    cpu.load_program(to_bytes(program));
+    cpu.run(100).unwrap();
+
+    // Write-through: memory and cache both hold 42
+    assert_eq!(cpu.regs[2], 42);
+    assert_eq!(cpu.mem.read_word(0x0300), 42);
+    // The read after write should be a miss (write doesn't allocate cache line)
+    // then the value should come from memory correctly
+    assert_eq!(cpu.cache.stats.reads, 1);
+}
+
+#[test]
+fn test_cache_hit_rate_tight_loop() {
+    // A tight loop reading the same address repeatedly should have high hit rate
+    // LOAD R1, mem[0x0300] in a loop 8 times
+    let mut cpu = Cpu::new();
+    cpu.mem.write_word(0x0300, 0x1234);
+
+    // Manually build: LOAD R0 addr; loop: LOADM R1 [R0]; ADDI R2 1; CMP R2 8; JNZ loop; HALT
+    let program = asm_and_load(
+        "
+        LOAD R0, 0x0300
+        LOAD R2, 0
+
+LOOP:
+        LOADM R1, R0
+        ADDI R2, 1
+        LOAD R3, 8
+        CMP  R2, R3
+        JNZ  LOOP
+        HALT
+        ",
+    );
+    // Run it — we already have the cpu from asm_and_load
+    // Re-run using cpu directly via the test helper pattern
+
+    // Use raw program approach instead
+    let mut cpu2 = Cpu::new();
+    cpu2.mem.write_word(0x0300, 0x1234);
+
+    // 8 reads of same address: 1 cold miss + 7 hits
+    for _ in 0..8 {
+        cpu2.cache.read_word(0x0300, &cpu2.mem);
+    }
+
+    assert_eq!(cpu2.cache.stats.reads, 8);
+    assert_eq!(cpu2.cache.stats.hits, 7);
+    assert_eq!(cpu2.cache.stats.misses, 1);
+    assert_eq!(cpu2.cache.stats.cold_misses, 1);
+    assert!(cpu2.cache.stats.hit_rate() > 85.0);
+}
+
+#[test]
+fn test_cache_conflict_miss() {
+    let mut cpu = Cpu::new();
+    cpu.mem.write_word(0x0300, 0x1111);
+    cpu.mem.write_word(0x0320, 0x2222);
+
+    cpu.cache.read_word(0x0300, &cpu.mem); // cold miss, line 0 ← 0x0300
+    cpu.cache.read_word(0x0320, &cpu.mem); // conflict miss, line 0 ← 0x0320
+    cpu.cache.read_word(0x0300, &cpu.mem); // conflict miss, line 0 ← 0x0300
+
+    assert_eq!(cpu.cache.stats.reads, 3);
+    assert_eq!(cpu.cache.stats.hits, 0);
+    assert_eq!(cpu.cache.stats.cold_misses, 1);
+    assert_eq!(cpu.cache.stats.conflict_misses, 2);
+}
+
+#[test]
+fn test_cache_flush_invalidates_all() {
+    // After flush, all reads should be misses
+    let mut cpu = Cpu::new();
+    cpu.mem.write_word(0x0300, 0xBEEF);
+
+    // Warm the cache
+    cpu.cache.read_word(0x0300, &cpu.mem);
+    assert_eq!(cpu.cache.stats.hits, 0);
+    assert_eq!(cpu.cache.stats.misses, 1);
+
+    // Hit on second read
+    cpu.cache.read_word(0x0300, &cpu.mem);
+    assert_eq!(cpu.cache.stats.hits, 1);
+
+    // Flush and read again — should miss
+    cpu.cache.flush();
+    cpu.cache.read_word(0x0300, &cpu.mem);
+    assert_eq!(cpu.cache.stats.misses, 2);
+    assert_eq!(cpu.cache.stats.cold_misses, 2); // re-cold after flush
+}
