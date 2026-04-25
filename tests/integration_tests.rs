@@ -659,8 +659,8 @@ fn test_cache_cold_miss_then_hit() {
     let program = &[
         Instruction::encode_ri(Opcode::Load, 0, 0x3E), // LOAD R0, 0x0300
         0x0300u16,
-        Instruction::encode_rr(Opcode::LoadM, 1, 0),   // LOADM R1, [R0] — cold miss
-        Instruction::encode_rr(Opcode::LoadM, 2, 0),   // LOADM R2, [R0] — hit
+        Instruction::encode_rr(Opcode::LoadM, 1, 0), // LOADM R1, [R0] — cold miss
+        Instruction::encode_rr(Opcode::LoadM, 2, 0), // LOADM R2, [R0] — hit
         Instruction::encode_ri(Opcode::Halt, 0, 0),
     ];
     cpu.load_program(to_bytes(program));
@@ -682,9 +682,9 @@ fn test_cache_write_through_coherence() {
     let program = &[
         Instruction::encode_ri(Opcode::Load, 0, 0x3E), // LOAD R0, 0x0300 (address)
         0x0300u16,
-        Instruction::encode_ri(Opcode::Load, 1, 42),   // LOAD R1, 42 (value)
-        Instruction::encode_rr(Opcode::Store, 0, 1),   // STORE [R0], R1  — write
-        Instruction::encode_rr(Opcode::LoadM, 2, 0),   // LOADM R2, [R0]  — read back
+        Instruction::encode_ri(Opcode::Load, 1, 42), // LOAD R1, 42 (value)
+        Instruction::encode_rr(Opcode::Store, 0, 1), // STORE [R0], R1  — write
+        Instruction::encode_rr(Opcode::LoadM, 2, 0), // LOADM R2, [R0]  — read back
         Instruction::encode_ri(Opcode::Halt, 0, 0),
     ];
     cpu.load_program(to_bytes(program));

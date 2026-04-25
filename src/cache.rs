@@ -30,7 +30,6 @@
 ///
 /// Stats printed at HALT:
 ///   total accesses, hits, misses, hit rate %, cold misses vs conflict misses
-
 use crate::memory::Memory;
 
 pub const NUM_LINES: usize = 16;
@@ -79,11 +78,7 @@ impl std::fmt::Display for CacheStats {
         writeln!(f, "│         L1 Cache Statistics             │")?;
         writeln!(f, "├─────────────────────────────────────────┤")?;
         writeln!(f, "│  Configuration                          │")?;
-        writeln!(
-            f,
-            "│    Lines:        {:>6}  (direct-mapped) │",
-            NUM_LINES
-        )?;
+        writeln!(f, "│    Lines:        {:>6}  (direct-mapped) │", NUM_LINES)?;
         writeln!(f, "│    Line size:    {:>6}  bytes           │", 2)?;
         writeln!(
             f,
