@@ -55,17 +55,16 @@ pub enum Opcode {
     Di = 0x1D,   // DI                — disable interrupts
 
     // Extended arithmetic / bit manipulation (v0.3.0)
-    Neg = 0x1E,  // NEG  Rd           — Rd = 0 - Rd (two's complement negation)
-                 //                      flags: Z, N, C=1 if Rd≠0, V=1 if Rd=0x8000
-    Mod = 0x1F,  // MOD  Rd, Rs       — Rd = Rd % Rs (unsigned modulo)
-                 //                      flags: Z, N; error if Rs=0
+    Neg = 0x1E, // NEG  Rd           — Rd = 0 - Rd (two's complement negation)
+    //                      flags: Z, N, C=1 if Rd≠0, V=1 if Rd=0x8000
+    Mod = 0x1F, // MOD  Rd, Rs       — Rd = Rd % Rs (unsigned modulo)
+    //                      flags: Z, N; error if Rs=0
     Swap = 0x20, // SWAP Rd, Rs       — exchange Rd ↔ Rs atomically
-                 //                      flags: unchanged
-    Rol = 0x21,  // ROL  Rd, imm4     — rotate Rd left by imm4 bits through carry
-                 //                      bit shifted out becomes new C; old C enters bit 0
-    Ror = 0x22,  // ROR  Rd, imm4     — rotate Rd right by imm4 bits through carry
-                 //                      bit shifted out becomes new C; old C enters bit 15
-
+    //                      flags: unchanged
+    Rol = 0x21, // ROL  Rd, imm4     — rotate Rd left by imm4 bits through carry
+    //                      bit shifted out becomes new C; old C enters bit 0
+    Ror = 0x22, // ROR  Rd, imm4     — rotate Rd right by imm4 bits through carry
+    //                      bit shifted out becomes new C; old C enters bit 15
     Halt = 0x3F, // HALT
 }
 
