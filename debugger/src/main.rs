@@ -1,4 +1,4 @@
-    /// cpu16 debugger — Axum HTTP server
+/// cpu16 debugger — Axum HTTP server
 ///
 /// Endpoints:
 ///   POST /api/load      { source: string }  → assemble + load program, reset CPU
@@ -7,7 +7,6 @@
 ///   POST /api/reset                         → reset CPU, keep program
 ///   GET  /api/state                         → full CPU state as JSON
 ///   GET  /              → serve index.html
-
 use axum::{
     Json, Router,
     extract::State,
@@ -128,7 +127,10 @@ async fn handle_load(
             *cpu = Cpu::new();
             cpu.load_program(&bytes);
             *state.program_bytes.lock().unwrap() = bytes;
-            (StatusCode::OK, Json(serde_json::json!({ "ok": true, "words": output.words.len() })))
+            (
+                StatusCode::OK,
+                Json(serde_json::json!({ "ok": true, "words": output.words.len() })),
+            )
         }
     }
 }
