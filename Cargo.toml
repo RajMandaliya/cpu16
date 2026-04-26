@@ -1,3 +1,7 @@
+[workspace]
+members = [".", "debugger"]
+resolver = "2"
+
 [package]
 name = "cpu16"
 version = "0.1.0"

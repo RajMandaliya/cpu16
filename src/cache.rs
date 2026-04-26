@@ -36,13 +36,13 @@ pub const NUM_LINES: usize = 16;
 
 /// A single cache line.
 #[derive(Debug, Clone, Copy, Default)]
-struct CacheLine {
+pub struct CacheLine {
     /// Whether this line contains valid data.
-    valid: bool,
+    pub valid: bool,
     /// Tag identifying which memory block is stored here.
-    tag: u16,
+    pub tag: u16,
     /// The cached 16-bit word.
-    data: u16,
+    pub data: u16,
 }
 
 /// Cache statistics collected during execution.
@@ -129,6 +129,10 @@ impl Cache {
             lines: [CacheLine::default(); NUM_LINES],
             stats: CacheStats::default(),
         }
+    }
+
+    pub fn get_line(&self, i: usize) -> CacheLine {
+        self.lines[i]
     }
 
     /// Decompose a byte address into (line_index, tag).
