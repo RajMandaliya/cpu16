@@ -2,12 +2,13 @@
 
 A fully custom 16-bit CPU emulator built from first principles in Rust. Includes a hand-designed
 Instruction Set Architecture (ISA), a two-pass assembler with forward-reference resolution, a
-fetch–decode–execute engine with interrupt handling, and a step-through debug mode.
+5-stage in-order pipeline with RAW hazard detection and branch flush, a direct-mapped L1 cache
+simulation, and a web-based step-through debugger.
 
 [![CI](https://github.com/RajMandaliya/cpu16/actions/workflows/ci.yml/badge.svg)](https://github.com/RajMandaliya/cpu16/actions)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-1.75+-orange.svg)](https://www.rust-lang.org)
-[![Tests](https://img.shields.io/badge/tests-18%20passing-brightgreen.svg)](tests/)
+[![Tests](https://img.shields.io/badge/tests-49%20passing-brightgreen.svg)](tests/)
 
 ---
 
@@ -55,37 +56,63 @@ calls). Every design choice has a reason — see [Design Decisions](#design-deci
 └──────────────────────────────────────────────────────────┘
 ```
 
-### Fetch–Decode–Execute pipeline
+---
+
+## 5-Stage Pipeline
 
 ```
-  ┌─────────┐     ┌─────────┐     ┌─────────────┐     ┌──────────────┐
-  │  Fetch  │────▶│ Decode  │────▶│   Execute   │────▶│ Write-back   │
-  │ PC→word │     │ opcode  │     │ ALU / mem / │     │ flags + regs │
-  │  PC+=2  │     │ dst/src │     │ flow ctrl   │     │ PC update    │
-  └─────────┘     └─────────┘     └─────────────┘     └──────────────┘
-        ▲                                                      │
-        └──────────────────────────────────────────────────────┘
-                           (next cycle)
+  ┌─────┐     ┌─────┐     ┌─────┐     ┌─────┐     ┌─────┐
+  │ IF  │────▶│ ID  │────▶│ EX  │────▶│ MEM │────▶│ WB  │
+  │Fetch│     │Decode     │Execute    │Memory     │Write│
+  └─────┘     └─────┘     └─────┘     └─────┘     └─────┘
 
-  Interrupt check occurs between write-back and next fetch.
-  If IE=1 and a pending interrupt exists:
-    push PC → SP, load IVT[interrupt_number] → PC
+  Hazard handling:
+  • RAW data hazards   → stall (freeze IF/ID, insert NOP bubble into EX)
+  • Flag hazards       → stall conditional branches until flags commit
+  • Control hazards    → 2-cycle flush on taken branch (resolved in EX)
+
+  Pipeline stats reported at HALT:
+  • CPI (Cycles Per Instruction)
+  • Efficiency %
+  • Data stall cycles
+  • Control flush cycles
 ```
 
 ---
 
-## Instruction Set
+## L1 Cache Simulation
 
-| Category      | Instructions                                        | Notes                              |
-|---------------|-----------------------------------------------------|------------------------------------|
-| Data move     | `LOAD`, `LOADM`, `STORE`, `MOV`                     | Immediate, register, and indirect  |
-| Arithmetic    | `ADD`, `SUB`, `ADDI`, `MUL`, `DIV`                  | Sets Z, C, N, V flags              |
-| Logic         | `AND`, `OR`, `XOR`, `NOT`, `SHL`, `SHR`             | Bitwise; shifts set C flag         |
-| Compare       | `CMP`                                               | Subtracts, sets flags, no write-back |
-| Flow control  | `JMP`, `JZ`, `JNZ`, `JC`, `JN`, `CALL`, `RET`      | Conditional on flag state          |
-| Stack         | `PUSH`, `POP`                                       | SP grows downward from 0xFFFE      |
-| Interrupts    | `INT`, `IRET`, `EI`, `DI`                           | Software interrupts, IVT dispatch  |
-| Misc          | `NOP`, `HALT`                                       |                                    |
+```
+  Direct-mapped, write-through, 16 lines
+
+  Address mapping:
+    line_index = (addr / 2) % 16
+    tag        = (addr / 2) / 16
+
+  Miss classification:
+  • Cold miss     — line was empty (first access)
+  • Conflict miss — valid line evicted by a different address mapping to same index
+
+  Cache stats reported at HALT:
+  • Hit rate %
+  • Total reads / writes
+  • Cold misses vs conflict misses
+```
+
+---
+
+## Instruction Set (35 instructions)
+
+| Category      | Instructions                                              | Notes                              |
+|---------------|-----------------------------------------------------------|------------------------------------|
+| Data move     | `LOAD`, `LOADM`, `STORE`, `MOV`                           | Immediate, register, and indirect  |
+| Arithmetic    | `ADD`, `SUB`, `ADDI`, `MUL`, `DIV`, `MOD`, `NEG`         | Sets Z, C, N, V flags              |
+| Logic         | `AND`, `OR`, `XOR`, `NOT`, `SHL`, `SHR`, `ROL`, `ROR`    | Bitwise; shifts/rotates set C flag |
+| Compare       | `CMP`                                                     | Subtracts, sets flags, no write-back |
+| Flow control  | `JMP`, `JZ`, `JNZ`, `JC`, `JN`, `CALL`, `RET`            | Conditional on flag state          |
+| Stack         | `PUSH`, `POP`, `SWAP`                                     | SP grows downward from 0xFFFE      |
+| Interrupts    | `INT`, `IRET`, `EI`, `DI`                                 | Software interrupts, IVT dispatch  |
+| Misc          | `NOP`, `HALT`                                             |                                    |
 
 **Encoding example** — `ADD R1, R2` (opcode=0x05, dst=1, src=2, imm=0):
 
@@ -100,6 +127,35 @@ calls). Every design choice has a reason — see [Design Decisions](#design-deci
 
 ---
 
+## Web Debugger
+
+A browser-based step-through debugger with an Axum HTTP backend and single-page UI.
+
+```bash
+cargo run -p debugger
+# Open http://localhost:3000
+```
+
+**Features:**
+- Assembly editor with 4 built-in example programs (fibonacci, factorial, countdown, flags demo)
+- Step / Run / Reset controls with keyboard shortcuts: F5 (step) / F8 (run) / Escape (reset)
+- Live register panel (R0–R3, PC, SP, FLAGS) with change highlighting on every step
+- Pipeline stage display (IF → ID → EX → MEM → WB)
+- L1 cache inspector: hit rate, cold/conflict miss breakdown, all 16 cache lines
+- Memory hex dump with PC position highlighted in real time
+
+**API endpoints:**
+
+| Method | Endpoint      | Description                      |
+|--------|---------------|----------------------------------|
+| POST   | /api/load     | Assemble source and load program |
+| POST   | /api/step     | Execute one instruction          |
+| POST   | /api/run      | Run up to N cycles               |
+| POST   | /api/reset    | Reset CPU, keep program loaded   |
+| GET    | /api/state    | Full CPU state as JSON           |
+
+---
+
 ## Project Structure
 
 ```
@@ -111,19 +167,30 @@ cpu16/
 │   ├── flags.rs          # FLAGS register: Z, C, N, V, IE with bit manipulation
 │   ├── memory.rs         # 64 KB flat memory, hex dump, IVT layout
 │   ├── cpu.rs            # Fetch–decode–execute core + interrupt dispatch
+│   ├── cache.rs          # Direct-mapped L1 cache with cold/conflict miss tracking
+│   ├── pipeline.rs       # 5-stage pipeline with RAW/flag hazard detection
 │   ├── assembler.rs      # Two-pass assembler: tokeniser + label resolution
 │   └── assembler/
 │       └── main.rs       # Assembler CLI
+├── debugger/
+│   ├── Cargo.toml        # Debugger crate (Axum + tower-http)
+│   └── src/
+│       └── main.rs       # HTTP server: /api/load, /step, /run, /reset, /state
+│   └── static/
+│       └── index.html    # Single-page debugger UI
 ├── examples/
+│   ├── bubble_sort.asm   # Bubble sort — demonstrates cache conflict misses
+│   ├── binary_search.asm # Binary search on a sorted array
+│   ├── sieve.asm         # Sieve of Eratosthenes
+│   ├── stack_calc.asm    # RPN stack calculator (dual-stack VM pattern)
 │   ├── fibonacci.asm     # Fibonacci(10) = 55, iterative
-│   ├── factorial.asm     # Factorial(6) = 720, recursive via CALL/RET
-│   └── interrupt_demo.asm
+│   └── factorial.asm     # Factorial(6) = 720, recursive via CALL/RET
 ├── tests/
-│   └── integration_tests.rs  # 18 integration tests across all instruction categories
+│   └── integration_tests.rs  # 49 integration tests across all features
 ├── .github/workflows/
 │   └── ci.yml            # fmt + clippy + test on every push
 ├── CHANGELOG.md
-└── Cargo.toml
+└── Cargo.toml            # Workspace: cpu16 + debugger
 ```
 
 ---
@@ -150,19 +217,15 @@ cargo build --release
 
 ```bash
 cargo test
-# 18 tests, 0 failures
+# 49 tests, 0 failures
 ```
 
-### Assemble a program
+### Assemble and run a program
 
 ```bash
 # Compile .asm → .bin
 cargo run --bin asm -- examples/factorial.asm factorial.bin
-```
 
-### Run a program
-
-```bash
 # Execute
 cargo run --bin cpu16 -- factorial.bin
 
@@ -171,6 +234,13 @@ cargo run --bin cpu16 -- factorial.bin --debug
 
 # Cap execution at N cycles (useful for catching infinite loops)
 cargo run --bin cpu16 -- factorial.bin --max-cycles 1000
+```
+
+### Run the web debugger
+
+```bash
+cargo run -p debugger
+# Open http://localhost:3000 in your browser
 ```
 
 ### Debug output (example)
@@ -192,23 +262,22 @@ cargo run --bin cpu16 -- factorial.bin --max-cycles 1000
 ### Fibonacci (iterative)
 
 ```asm
-; Compute Fibonacci(10) — result in R1 = 55
+; Compute Fibonacci(10) — result in R0 = 55
 
         LOAD  R0, 0        ; a = 0
         LOAD  R1, 1        ; b = 1
-        LOAD  R2, 10       ; counter
+        LOAD  R2, 9        ; counter
 
 LOOP:
-        LOAD  R3, 0
-        CMP   R2, R3
-        JZ    DONE
         MOV   R3, R1       ; tmp = b
         ADD   R1, R0       ; b = a + b
         MOV   R0, R3       ; a = tmp
         ADDI  R2, -1       ; counter--
-        JMP   LOOP
+        LOAD  R3, 0
+        CMP   R2, R3
+        JNZ   LOOP
 
-DONE:   HALT               ; R1 = 55
+        HALT               ; R0 = 55
 ```
 
 ### Factorial (subroutine via CALL/RET)
@@ -229,23 +298,6 @@ LOOP:   CMP   R0, R2
         JMP   LOOP
 
 DONE:   RET
-```
-
-### Interrupt demo
-
-```asm
-; Install handler at IVT slot 0, trigger INT 0
-; Handler stores 0xBEEF into memory address 0x0300
-
-        EI                 ; enable interrupts
-        INT  0             ; trigger interrupt 0
-        HALT
-
-INT_HANDLER:
-        LOAD  R0, 0xBEEF
-        LOAD  R1, 0x0300
-        STORE R0, R1
-        IRET
 ```
 
 ---
@@ -278,21 +330,16 @@ LABEL:                     ; label definition (resolves to current address)
 | Indirect | `Rd, Rs` | `LOADM R0, R1` | Load from memory address in Rs |
 | Label | `LABEL` | `JMP LOOP` | Resolved by assembler pass 2 |
 
-### Data directives
-
-```asm
-TABLE: DW 0x0001 0x0002 0x0003   ; emit three 16-bit words at this address
-```
-
 ### Flag effects per instruction
 
 | Instruction | Z | C | N | V |
 |-------------|---|---|---|---|
-| `ADD` | ✓ | ✓ | ✓ | ✓ |
+| `ADD`, `ADDI` | ✓ | ✓ | ✓ | ✓ |
 | `SUB`, `CMP` | ✓ | ✓ | ✓ | ✓ |
-| `MUL`, `DIV` | ✓ | — | ✓ | — |
-| `AND/OR/XOR/NOT` | ✓ | — | ✓ | — |
-| `SHL`, `SHR` | ✓ | ✓ | ✓ | — |
+| `MUL`, `DIV`, `MOD` | ✓ | — | ✓ | — |
+| `NEG` | ✓ | ✓ | ✓ | ✓ |
+| `AND`, `OR`, `XOR`, `NOT` | ✓ | — | ✓ | — |
+| `SHL`, `SHR`, `ROL`, `ROR` | ✓ | ✓ | ✓ | — |
 | `LOAD`, `MOV` | — | — | — | — |
 
 ---
@@ -309,9 +356,7 @@ in the status register, every address in the memory map was a deliberate choice 
 
 16 bits is the sweet spot for a from-scratch implementation. It is rich enough to support flags,
 a real stack, subroutines, interrupts, and indirect addressing — but simple enough that the entire
-machine fits in a few hundred lines of Rust and can be reasoned about completely. A 32-bit or
-64-bit machine at this level of fidelity would be an order of magnitude more work with the same
-pedagogical payoff.
+machine fits in a few hundred lines of Rust and can be reasoned about completely.
 
 ### Why only 4 general-purpose registers?
 
@@ -320,30 +365,47 @@ fields (dst, src) at 2 bits each uses 4 bits, leaving 6 bits for an immediate �
 constants and offsets. Supporting 8 registers would require 3-bit register fields, leaving only
 4 bits for the immediate, which is too narrow to be useful. 4 registers fits the encoding budget.
 
+### Why stall instead of forwarding in the pipeline?
+
+Forwarding passes results directly from EX output to EX input without waiting for WB — more
+efficient but significantly more complex. Stalling is simpler, easier to verify correct, and
+sufficient for cpu16's educational purpose. The stall penalty is visible in the CPI output,
+making the cost of hazards measurable and concrete.
+
 ### Two-pass assembler
 
 Pass 1 tokenises the source and records every label's address. Pass 2 emits encoded instructions,
-substituting label addresses for forward references. This is the classic approach (used by most
-real assemblers) and lets you write `JMP DONE` before `DONE:` is defined.
+substituting label addresses for forward references. This lets you write `JMP DONE` before
+`DONE:` is defined — the classic approach used by most real assemblers.
 
 ### Little-endian memory
 
 Consistent with the dominant convention in modern hardware (x86, ARM in LE mode). The low byte of
-a 16-bit word lives at the lower address. This simplifies byte-addressed reads and aligns with what
-most Rust programmers expect from memory layout.
+a 16-bit word lives at the lower address.
 
 ### Stack grows downward from 0xFFFE
 
 Placing the stack at the top of the address space and growing it downward means the program and
-stack never collide as long as the program doesn't grow into the top of memory. In a 64 KB machine
-this is the standard layout: code at the bottom, stack at the top, heap (if added) in between.
+stack never collide as long as the program doesn't grow into the top of memory. Code at the bottom,
+stack at the top — the standard layout for flat address spaces.
 
 ### Interrupt Vector Table at 0x0000
 
 The IVT occupies the lowest 32 bytes (16 two-byte entries). This mirrors real architectures (x86
-real mode IVT, ARM exception table) where the reset and interrupt vectors live at fixed low
-addresses. The CPU checks for pending interrupts between instruction cycles and dispatches via the
-IVT when `IE=1`.
+real mode IVT, ARM exception table) where reset and interrupt vectors live at fixed low addresses.
+
+---
+
+## Releases
+
+| Version | What's new |
+|---------|------------|
+| v0.6.0  | Web debugger — Axum backend + single-page UI with live register, pipeline, cache, and memory views |
+| v0.5.0  | 5-stage pipeline simulation with RAW/flag hazard detection, branch flush, and CPI stats |
+| v0.4.0  | L1 cache simulation — direct-mapped, write-through, cold/conflict miss classification |
+| v0.3.0  | 5 new instructions: NEG, MOD, SWAP, ROL, ROR |
+| v0.2.0  | 6 assembly example programs: bubble sort, binary search, sieve, RPN calculator, fibonacci, factorial |
+| v0.1.0  | Initial release — ISA, assembler, fetch-decode-execute, interrupt handling, 18 tests |
 
 ---
 
@@ -358,18 +420,6 @@ Measured on Apple M2, release build (`cargo build --release`):
 | Tight loop (1M iterations) | 3,000,001 | 3,000,001 | ~12 ms |
 
 The emulator executes approximately **250M simulated instructions/second** in release mode.
-(Benchmark with `cargo run --release --bin cpu16 -- examples/bench_loop.asm --max-cycles 3000001`)
-
----
-
-## Roadmap
-
-- [ ] **Phase 2** — More example programs: bubble sort, binary search, sieve of Eratosthenes, stack calculator
-- [ ] **Phase 3** — CPU extensions: pipeline simulation, cache model, additional instructions (MOD, NEG, SWAP)
-- [ ] **Phase 4** — Web-based debugger UI: step-through, register viewer, memory inspector, live disassembly
-- [ ] Interrupt controller with priority levels
-- [ ] Assembler macros
-- [ ] Symbol table export for linker experiments
 
 ---
 
